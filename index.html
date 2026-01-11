@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Painel CO₂ Pantanal — Solo & Água</title>
+  <meta name="theme-color" content="#0b1220" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Date adapter (opcional, usamos nativo, mas ajuda em escalas) -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">CO₂</div>
+      <div>
+        <div class="title">Painel CO₂ do Pantanal</div>
+        <div class="subtitle">Solo • Água • Compartimentos • Variáveis ambientais</div>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <button id="btnReset" class="btn">Limpar filtros</button>
+      <button id="btnDownloadCSV" class="btn primary">Baixar CSV (recorte)</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- Coluna esquerda: filtros + KPIs -->
+    <section class="panel">
+      <h2>Filtros</h2>
+
+      <div class="grid2">
+        <div class="field">
+          <label>Meio</label>
+          <select id="fMedium">
+            <option value="all">Todos</option>
+            <option value="soil">Solo</option>
+            <option value="water">Água</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Compartimento</label>
+          <select id="fCompartment">
+            <option value="all">Todos</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Ponto</label>
+          <select id="fSite">
+            <option value="all">Todos</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Variável do gráfico</label>
+          <select id="fVariable">
+            <option value="co2_flux">CO₂ flux</option>
+            <option value="temp_air">Temp. ar</option>
+            <option value="temp_water">Temp. água</option>
+            <option value="temp_soil">Temp. solo</option>
+            <option value="rh">Umidade relativa</option>
+            <option value="soil_moisture">Umidade do solo</option>
+            <option value="water_depth">Profundidade água</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Data inicial</label>
+          <input id="fDateStart" type="date" />
+        </div>
+
+        <div class="field">
+          <label>Data final</label>
+          <input id="fDateEnd" type="date" />
+        </div>
+      </div>
+
+      <div class="chips">
+        <button class="chip" data-range="7">Últimos 7 dias</button>
+        <button class="chip" data-range="30">30 dias</button>
+        <button class="chip" data-range="365">1 ano</button>
+        <button class="chip" data-range="all">Tudo</button>
+      </div>
+
+      <hr class="sep"/>
+
+      <h2>Resumo (recorte atual)</h2>
+      <div class="kpis">
+        <div class="kpi">
+          <div class="kpi-label">N (registros)</div>
+          <div class="kpi-value" id="kpiN">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Média CO₂ flux</div>
+          <div class="kpi-value" id="kpiMean">—</div>
+          <div class="kpi-sub" id="kpiMeanUnit">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Máximo CO₂ flux</div>
+          <div class="kpi-value" id="kpiMax">—</div>
+          <div class="kpi-sub" id="kpiMaxMeta">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Mínimo CO₂ flux</div>
+          <div class="kpi-value" id="kpiMin">—</div>
+          <div class="kpi-sub" id="kpiMinMeta">—</div>
+        </div>
+      </div>
+
+      <div class="compare">
+        <h3>Comparação Solo vs Água (CO₂ flux)</h3>
+        <div class="compare-row">
+          <div class="compare-box">
+            <div class="compare-label">Solo (média)</div>
+            <div class="compare-value" id="cmpSoil">—</div>
+          </div>
+          <div class="compare-box">
+            <div class="compare-label">Água (média)</div>
+            <div class="compare-value" id="cmpWater">—</div>
+          </div>
+        </div>
+        <div class="hint">Dica: filtre por compartimento para comparar dentro de cada ambiente.</div>
+      </div>
+    </section>
+
+    <!-- Centro: mapa + gráficos -->
+    <section class="main">
+      <section class="card">
+        <div class="card-head">
+          <h2>Mapa de amostragem</h2>
+          <div class="muted">Passe o mouse nos pontos para ver as coletas</div>
+        </div>
+        <div id="map" class="map"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Série temporal</h2>
+          <div class="muted">Variável selecionada vs tempo</div>
+        </div>
+        <canvas id="chartTS" height="110"></canvas>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Distribuição (histograma simples)</h2>
+          <div class="muted">Ajuda a ver assimetrias e picos</div>
+        </div>
+        <canvas id="chartHist" height="110"></canvas>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Tabela (pesquisa rápida)</h2>
+          <div class="muted">Use Ctrl+F ou a busca interna</div>
+        </div>
+
+        <div class="table-tools">
+          <input id="tblSearch" class="search" placeholder="Buscar (site, compartimento, meio, data...)" />
+          <div class="muted" id="tblInfo">—</div>
+        </div>
+
+        <div class="table-wrap">
+          <table id="tbl" class="tbl">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Ponto</th>
+                <th>Meio</th>
+                <th>Compartimento</th>
+                <th>CO₂ flux</th>
+                <th>Temp ar</th>
+                <th>UR</th>
+                <th>Temp água</th>
+                <th>Temp solo</th>
+                <th>Obs</th>
+              </tr>
+            </thead>
+            <tbody id="tblBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div>© Painel CO₂ Pantanal — pronto para GitHub Pages</div>
+    <div class="muted">Atualize seus dados em <code>data.js</code></div>
+  </footer>
+
+  <!-- Dados + App -->
+  <script src="./data.js"></script>
+  <script src="./app.js"></script>
+
+  <!-- Leaflet -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</body>
+</html>
