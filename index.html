@@ -6,13 +6,8 @@
   <title>Painel CO₂ Pantanal — Solo & Água</title>
   <meta name="theme-color" content="#0b1220" />
 
-  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
-  <!-- Date adapter (opcional, usamos nativo, mas ajuda em escalas) -->
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
 
   <link rel="stylesheet" href="./styles.css" />
@@ -23,7 +18,7 @@
       <div class="logo">CO₂</div>
       <div>
         <div class="title">Painel CO₂ do Pantanal</div>
-        <div class="subtitle">Solo • Água • Compartimentos • Variáveis ambientais</div>
+        <div class="subtitle">Dados de SOLO e ÁGUA • filtros por compartimento • mapa interativo</div>
       </div>
     </div>
 
@@ -34,8 +29,7 @@
   </header>
 
   <main class="layout">
-    <!-- Coluna esquerda: filtros + KPIs -->
-    <section class="panel">
+    <aside class="panel">
       <h2>Filtros</h2>
 
       <div class="grid2">
@@ -49,30 +43,50 @@
         </div>
 
         <div class="field">
-          <label>Compartimento</label>
-          <select id="fCompartment">
+          <label>Local</label>
+          <select id="fLocal">
             <option value="all">Todos</option>
           </select>
         </div>
 
         <div class="field">
           <label>Ponto</label>
-          <select id="fSite">
+          <select id="fPonto">
+            <option value="all">Todos</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Compartimento (Água)</label>
+          <select id="fCompartimento">
+            <option value="all">Todos</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Tratamento</label>
+          <select id="fTratamento">
+            <option value="all">Todos</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Estado do solo (Solo)</label>
+          <select id="fEstadoSolo">
+            <option value="all">Todos</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Período sazonal (Água)</label>
+          <select id="fPeriodo">
             <option value="all">Todos</option>
           </select>
         </div>
 
         <div class="field">
           <label>Variável do gráfico</label>
-          <select id="fVariable">
-            <option value="co2_flux">CO₂ flux</option>
-            <option value="temp_air">Temp. ar</option>
-            <option value="temp_water">Temp. água</option>
-            <option value="temp_soil">Temp. solo</option>
-            <option value="rh">Umidade relativa</option>
-            <option value="soil_moisture">Umidade do solo</option>
-            <option value="water_depth">Profundidade água</option>
-          </select>
+          <select id="fVariable"></select>
         </div>
 
         <div class="field">
@@ -87,7 +101,7 @@
       </div>
 
       <div class="chips">
-        <button class="chip" data-range="7">Últimos 7 dias</button>
+        <button class="chip" data-range="7">7 dias</button>
         <button class="chip" data-range="30">30 dias</button>
         <button class="chip" data-range="365">1 ano</button>
         <button class="chip" data-range="all">Tudo</button>
@@ -95,7 +109,7 @@
 
       <hr class="sep"/>
 
-      <h2>Resumo (recorte atual)</h2>
+      <h2>KPIs (recorte atual)</h2>
       <div class="kpis">
         <div class="kpi">
           <div class="kpi-label">N (registros)</div>
@@ -103,18 +117,18 @@
         </div>
         <div class="kpi">
           <div class="kpi-label">Média CO₂ flux</div>
-          <div class="kpi-value" id="kpiMean">—</div>
-          <div class="kpi-sub" id="kpiMeanUnit">—</div>
+          <div class="kpi-value" id="kpiCo2Mean">—</div>
+          <div class="kpi-sub" id="kpiCo2Unit">—</div>
         </div>
         <div class="kpi">
           <div class="kpi-label">Máximo CO₂ flux</div>
-          <div class="kpi-value" id="kpiMax">—</div>
-          <div class="kpi-sub" id="kpiMaxMeta">—</div>
+          <div class="kpi-value" id="kpiCo2Max">—</div>
+          <div class="kpi-sub" id="kpiCo2MaxMeta">—</div>
         </div>
         <div class="kpi">
           <div class="kpi-label">Mínimo CO₂ flux</div>
-          <div class="kpi-value" id="kpiMin">—</div>
-          <div class="kpi-sub" id="kpiMinMeta">—</div>
+          <div class="kpi-value" id="kpiCo2Min">—</div>
+          <div class="kpi-sub" id="kpiCo2MinMeta">—</div>
         </div>
       </div>
 
@@ -130,16 +144,15 @@
             <div class="compare-value" id="cmpWater">—</div>
           </div>
         </div>
-        <div class="hint">Dica: filtre por compartimento para comparar dentro de cada ambiente.</div>
+        <div class="hint" id="metaHint">—</div>
       </div>
-    </section>
+    </aside>
 
-    <!-- Centro: mapa + gráficos -->
     <section class="main">
       <section class="card">
         <div class="card-head">
           <h2>Mapa de amostragem</h2>
-          <div class="muted">Passe o mouse nos pontos para ver as coletas</div>
+          <div class="muted">Passe o mouse nos pontos para ver resumo. Clique para detalhes.</div>
         </div>
         <div id="map" class="map"></div>
       </section>
@@ -147,46 +160,33 @@
       <section class="card">
         <div class="card-head">
           <h2>Série temporal</h2>
-          <div class="muted">Variável selecionada vs tempo</div>
+          <div class="muted">Solo vs Água • variável selecionada</div>
         </div>
         <canvas id="chartTS" height="110"></canvas>
       </section>
 
       <section class="card">
         <div class="card-head">
-          <h2>Distribuição (histograma simples)</h2>
-          <div class="muted">Ajuda a ver assimetrias e picos</div>
+          <h2>Distribuição</h2>
+          <div class="muted">Histograma simples da variável selecionada</div>
         </div>
         <canvas id="chartHist" height="110"></canvas>
       </section>
 
       <section class="card">
         <div class="card-head">
-          <h2>Tabela (pesquisa rápida)</h2>
-          <div class="muted">Use Ctrl+F ou a busca interna</div>
+          <h2>Tabela (pesquisa)</h2>
+          <div class="muted">Busca por qualquer texto (local, ponto, compartimento, data…)</div>
         </div>
 
         <div class="table-tools">
-          <input id="tblSearch" class="search" placeholder="Buscar (site, compartimento, meio, data...)" />
+          <input id="tblSearch" class="search" placeholder="Buscar…" />
           <div class="muted" id="tblInfo">—</div>
         </div>
 
         <div class="table-wrap">
           <table id="tbl" class="tbl">
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Ponto</th>
-                <th>Meio</th>
-                <th>Compartimento</th>
-                <th>CO₂ flux</th>
-                <th>Temp ar</th>
-                <th>UR</th>
-                <th>Temp água</th>
-                <th>Temp solo</th>
-                <th>Obs</th>
-              </tr>
-            </thead>
+            <thead id="tblHead"></thead>
             <tbody id="tblBody"></tbody>
           </table>
         </div>
@@ -195,15 +195,12 @@
   </main>
 
   <footer class="footer">
-    <div>© Painel CO₂ Pantanal — pronto para GitHub Pages</div>
-    <div class="muted">Atualize seus dados em <code>data.js</code></div>
+    <div>© Painel CO₂ Pantanal</div>
+    <div class="muted">Dados embutidos em <code>data.js</code> • pronto para GitHub Pages</div>
   </footer>
 
-  <!-- Dados + App -->
   <script src="./data.js"></script>
-  <script src="./app.js"></script>
-
-  <!-- Leaflet -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
