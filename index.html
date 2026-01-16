@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CO2-Pantanal</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- PapaParse (CSV) -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+
+<body>
+  <!-- Floating CO2 layer -->
+  <div id="co2-float-layer" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-title">CO2-pantanal</div>
+      <div class="brand-subtitle">Internal dashboard • map + filters + comparisons</div>
+    </div>
+
+    <div class="top-actions">
+      <button id="btn-fit" class="btn">Fit map</button>
+      <button id="btn-reset" class="btn btn-ghost">Reset filters</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="panel">
+      <div class="panel-section">
+        <div class="section-title">Data source</div>
+        <div class="small">
+          File: <code>data/data.csv</code><br/>
+          If the map is empty, check column names and commas in CSV.
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-title">Filters</div>
+
+        <label class="label">Compartment</label>
+        <div class="row">
+          <select id="f-compartment" class="select">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <label class="label">Surface / habitat (e.g., vegetated, exposed, macrophytes, open bed)</label>
+        <div class="row">
+          <select id="f-habitat" class="select">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <label class="label">Site</label>
+        <div class="row">
+          <select id="f-site" class="select">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <label class="label">Date (start → end)</label>
+        <div class="row row-2">
+          <input id="f-date-start" class="input" type="date" />
+          <input id="f-date-end" class="input" type="date" />
+        </div>
+
+        <label class="label">CO₂ variable</label>
+        <div class="row">
+          <select id="f-co2col" class="select">
+            <!-- populated from CSV columns -->
+          </select>
+        </div>
+
+        <div class="row">
+          <button id="btn-apply" class="btn btn-primary">Apply</button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-title">Quick stats (filtered)</div>
+        <div id="stats" class="stats">
+          <div class="stat"><span class="k">N</span><span class="v" id="s-n">–</span></div>
+          <div class="stat"><span class="k">Min</span><span class="v" id="s-min">–</span></div>
+          <div class="stat"><span class="k">Max</span><span class="v" id="s-max">–</span></div>
+          <div class="stat"><span class="k">Mean</span><span class="v" id="s-mean">–</span></div>
+          <div class="stat"><span class="k">Median</span><span class="v" id="s-med">–</span></div>
+        </div>
+        <div class="small muted" id="units-note"></div>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-title">Research gaps</div>
+        <div class="small">
+          This checks missing combinations across <b>compartment × habitat</b> (within your filtered range).
+        </div>
+        <div id="gaps" class="gaps"></div>
+      </div>
+    </aside>
+
+    <section class="content">
+      <div class="card map-card">
+        <div class="card-title">Sampling map</div>
+        <div class="card-subtitle">Hover a point to preview • Click for full record</div>
+        <div id="map"></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Comparison</div>
+          <div class="card-subtitle">Mean CO₂ by group (compartment / habitat)</div>
+          <canvas id="chart-compare" height="140"></canvas>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Timeline</div>
+          <div class="card-subtitle">CO₂ over time (filtered)</div>
+          <canvas id="chart-time" height="140"></canvas>
+        </div>
+      </div>
+
+      <div class="card table-card">
+        <div class="card-title">Filtered records</div>
+        <div class="card-subtitle">Top 200 rows (so it stays light)</div>
+        <div class="table-wrap">
+          <table class="table" id="table"></table>
+        </div>
+      </div>
+
+      <footer class="footer small muted">
+        CO2-pantanal • static GitHub Pages friendly • no backend
+      </footer>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
