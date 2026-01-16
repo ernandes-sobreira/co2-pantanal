@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CO2-Pantanal</title>
+  <title>CO2-pantanal</title>
 
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -18,7 +18,7 @@
 </head>
 
 <body>
-  <!-- Floating CO2 layer -->
+  <!-- CO2 bubbles (front, non-blocking) -->
   <div id="co2-float-layer" aria-hidden="true"></div>
 
   <header class="topbar">
@@ -29,7 +29,7 @@
 
     <div class="top-actions">
       <button id="btn-fit" class="btn">Fit map</button>
-      <button id="btn-reset" class="btn btn-ghost">Reset filters</button>
+      <button id="btn-reset" class="btn btn-ghost">Reset</button>
     </div>
   </header>
 
@@ -38,31 +38,52 @@
       <div class="panel-section">
         <div class="section-title">Data source</div>
         <div class="small">
-          File: <code>data/data.csv</code><br/>
-          If the map is empty, check column names and commas in CSV.
+          File: <code>data/data.csv</code> (semicolon-separated <code>;</code>)<br/>
+          If the map is empty, check coordinates + CSV delimiter.
         </div>
       </div>
 
       <div class="panel-section">
         <div class="section-title">Filters</div>
 
-        <label class="label">Compartment</label>
+        <label class="label">Compartment (SOLO/ÁGUA)</label>
         <div class="row">
           <select id="f-compartment" class="select">
             <option value="">All</option>
           </select>
         </div>
 
-        <label class="label">Surface / habitat (e.g., vegetated, exposed, macrophytes, open bed)</label>
+        <label class="label">Treatment (TRATAMENTO)</label>
         <div class="row">
-          <select id="f-habitat" class="select">
+          <select id="f-treatment" class="select">
             <option value="">All</option>
           </select>
         </div>
 
-        <label class="label">Site</label>
+        <label class="label">Local characteristic (CARACTERÍSTICA LOCAL)</label>
+        <div class="row">
+          <select id="f-characteristic" class="select">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <label class="label">Site (NOME DO LOCAL)</label>
         <div class="row">
           <select id="f-site" class="select">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <label class="label">Status (STATUS AMBIENTAL)</label>
+        <div class="row">
+          <select id="f-status" class="select">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <label class="label">Point (PONTO)</label>
+        <div class="row">
+          <select id="f-point" class="select">
             <option value="">All</option>
           </select>
         </div>
@@ -73,11 +94,9 @@
           <input id="f-date-end" class="input" type="date" />
         </div>
 
-        <label class="label">CO₂ variable</label>
+        <label class="label">CO₂ column</label>
         <div class="row">
-          <select id="f-co2col" class="select">
-            <!-- populated from CSV columns -->
-          </select>
+          <select id="f-co2col" class="select"></select>
         </div>
 
         <div class="row">
@@ -87,12 +106,13 @@
 
       <div class="panel-section">
         <div class="section-title">Quick stats (filtered)</div>
-        <div id="stats" class="stats">
+        <div class="stats">
           <div class="stat"><span class="k">N</span><span class="v" id="s-n">–</span></div>
           <div class="stat"><span class="k">Min</span><span class="v" id="s-min">–</span></div>
           <div class="stat"><span class="k">Max</span><span class="v" id="s-max">–</span></div>
           <div class="stat"><span class="k">Mean</span><span class="v" id="s-mean">–</span></div>
           <div class="stat"><span class="k">Median</span><span class="v" id="s-med">–</span></div>
+          <div class="stat"><span class="k">IQR</span><span class="v" id="s-iqr">–</span></div>
         </div>
         <div class="small muted" id="units-note"></div>
       </div>
@@ -100,7 +120,7 @@
       <div class="panel-section">
         <div class="section-title">Research gaps</div>
         <div class="small">
-          This checks missing combinations across <b>compartment × habitat</b> (within your filtered range).
+          Missing combos across <b>SOLO/ÁGUA × TRATAMENTO</b> (within your filters).
         </div>
         <div id="gaps" class="gaps"></div>
       </div>
@@ -116,20 +136,20 @@
       <div class="grid-2">
         <div class="card">
           <div class="card-title">Comparison</div>
-          <div class="card-subtitle">Mean CO₂ by group (compartment / habitat)</div>
+          <div class="card-subtitle">Mean CO₂ by group (SOLO/ÁGUA × TRATAMENTO)</div>
           <canvas id="chart-compare" height="140"></canvas>
         </div>
 
         <div class="card">
           <div class="card-title">Timeline</div>
-          <div class="card-subtitle">CO₂ over time (filtered)</div>
+          <div class="card-subtitle">CO₂ over time (daily mean)</div>
           <canvas id="chart-time" height="140"></canvas>
         </div>
       </div>
 
       <div class="card table-card">
         <div class="card-title">Filtered records</div>
-        <div class="card-subtitle">Top 200 rows (so it stays light)</div>
+        <div class="card-subtitle">Top 200 rows (fast + light)</div>
         <div class="table-wrap">
           <table class="table" id="table"></table>
         </div>
