@@ -1,8 +1,9 @@
-/* CO2-Pantanal – static dashboard
-   - Reads data/data.csv
-   - Leaflet map with hover preview + click full popup
-   - Filters: compartment, habitat, site, date range, CO2 column selector
-   - Stats + comparison chart + timeline chart + small “gaps” checker
+/* CO2-Pantanal – static dashboard (your exact CSV headers)
+   - Reads data/data.csv (semicolon delimiter ; with BOM)
+   - Leaflet map hover + click popup
+   - Filters: SOLO/ÁGUA, TRATAMENTO, CARACTERÍSTICA LOCAL, NOME DO LOCAL, STATUS AMBIENTAL, PONTO, date range
+   - Stats: min/max/mean/median/IQR
+   - Charts: group comparison + timeline
 */
 
 const DATA_URL = "data/data.csv";
@@ -11,34 +12,56 @@ const el = (id) => document.getElementById(id);
 
 let RAW = [];
 let FILTERED = [];
+
 let MAP = null;
 let LAYER = null;
 
 let chartCompare = null;
 let chartTime = null;
 
-const REQUIRED = ["lat", "lon"]; // minimal for map
+// ======== Your EXACT headers ========
+const H = {
+  author: "AUTOR",
+  date: "DATA",
+  site: "NOME DO LOCAL",
+  compartment: "SOLO/ÁGUA",
+  characteristic: "CARACTERÍSTICA LOCAL",
+  status: "STATUS AMBIENTAL",
+  lat: "Latitude 1",
+  lon: "Longitude 2",
+  point: "PONTO",
+  treatment: "TRATAMENTO",
+  soilState: "ESTADO DO SOLO",
+  ph: "pH",
+  temp: "TEMPERATURA",
+  organic: "MATÉRIA ÔRGANICA",
+  do_mgL: "OD (mg/L)",
+  cond: "COND (µc/cm)",
+  do_pct: "OD (%)",
+  replica: "RÉPLICA",
+  chamber: "CÂMARA",
+  co2: "CO2 flux (mg/m2/day)"
+};
 
-function normKey(k){
-  return (k || "").toString().trim();
-}
 function normVal(v){
   if (v === null || v === undefined) return "";
   return v.toString().trim();
 }
 function toNum(v){
-  const x = parseFloat(String(v).replace(",", "."));
+  const s = normVal(v);
+  if (!s) return null;
+  const x = parseFloat(s.replace(",", "."));
   return Number.isFinite(x) ? x : null;
 }
 function toDateISO(dateStr){
-  // Accept: YYYY-MM-DD (ideal) or DD/MM/YYYY
   const s = normVal(dateStr);
   if (!s) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // your file uses DD/MM/YYYY
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)){
     const [dd,mm,yyyy] = s.split("/");
     return `${yyyy}-${mm}-${dd}`;
   }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   return null;
 }
 function format(n){
@@ -50,38 +73,48 @@ function format(n){
   if (abs >= 10) return n.toFixed(2);
   return n.toFixed(3);
 }
-
 function unique(list){
-  return [...new Set(list.filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  return [...new Set(list.filter(x => x !== "" && x !== null && x !== undefined))]
+    .sort((a,b)=>String(a).localeCompare(String(b)));
+}
+function escapeHtml(s){
+  return String(s ?? "").replace(/[&<>"']/g, (m)=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;", "\"":"&quot;","'":"&#039;"
+  }[m]));
 }
 
-function pickFirstExisting(columns, candidates){
-  const set = new Set(columns);
-  for (const c of candidates) if (set.has(c)) return c;
-  return null;
-}
-
-/* ===== CO2 floating bubbles ===== */
+// ===== CO2 bubbles (front, subtle) =====
 function initCO2Float(){
   const layer = el("co2-float-layer");
-  const N = 18;
+  const N = 22;
+
   for (let i=0;i<N;i++){
-    const d = document.createElement("div");
-    d.className = "co2-bubble";
-    d.textContent = "CO₂";
+    const b = document.createElement("div");
+    b.className = "co2-bubble";
+
+    const sp = document.createElement("span");
+    sp.textContent = "CO₂";
+    b.appendChild(sp);
+
+    const size = 56 + Math.random()*70;      // variable bubble size
     const left = Math.random() * 100;
-    const size = 16 + Math.random()*22;
-    const dur = 14 + Math.random()*22;
-    const delay = Math.random()*-20;
-    d.style.left = `${left}vw`;
-    d.style.fontSize = `${size}px`;
-    d.style.animationDuration = `${dur}s`;
-    d.style.animationDelay = `${delay}s`;
-    layer.appendChild(d);
+    const dur = 16 + Math.random()*26;
+    const delay = Math.random()*-22;
+
+    b.style.width = `${size}px`;
+    b.style.height = `${size}px`;
+    b.style.left = `${left}vw`;
+    b.style.animationDuration = `${dur}s`;
+    b.style.animationDelay = `${delay}s`;
+
+    // randomize opacity slightly (still subtle)
+    b.style.opacity = (0.10 + Math.random()*0.14).toFixed(2);
+
+    layer.appendChild(b);
   }
 }
 
-/* ===== Map ===== */
+// ===== Map =====
 function initMap(){
   MAP = L.map("map", { preferCanvas: true }).setView([-16.3, -56.0], 6);
 
@@ -94,159 +127,123 @@ function initMap(){
 }
 
 function markerColor(compartment){
-  const c = (compartment || "").toLowerCase();
-  if (c.includes("water") || c.includes("água") || c.includes("agua")) return "#2563eb"; // blue
-  if (c.includes("soil") || c.includes("solo")) return "#0f172a"; // dark
-  return "#6b7280"; // gray
+  const c = normVal(compartment).toLowerCase();
+  if (c.includes("água") || c.includes("agua") || c.includes("water")) return "#2563eb";
+  if (c.includes("solo") || c.includes("soil")) return "#0f172a";
+  return "#6b7280";
 }
 
-function makeCircleMarker(row){
-  const lat = toNum(row.lat);
-  const lon = toNum(row.lon);
-  if (lat === null || lon === null) return null;
+function buildPopupHTML(r, co2Col){
+  const site = normVal(r[H.site]);
+  const date = normVal(r[H.date]);
+  const comp = normVal(r[H.compartment]);
+  const treat = normVal(r[H.treatment]);
+  const status = normVal(r[H.status]);
+  const characteristic = normVal(r[H.characteristic]);
+  const point = normVal(r[H.point]);
 
-  const comp = row.compartment || row.compartimento || "";
-  const color = markerColor(comp);
+  const co2 = toNum(r[co2Col]);
 
-  const m = L.circleMarker([lat, lon], {
-    radius: 7,
-    weight: 2,
-    color: color,
-    fillColor: color,
-    fillOpacity: 0.25
-  });
-
-  return m;
-}
-
-function buildPopupHTML(row, co2col){
-  const site = row.site_name || row.site || row.local || row.location || "Site";
-  const date = row.date || row.data || "";
-  const time = row.time || row.hora || "";
-  const comp = row.compartment || row.compartimento || "";
-  const habitat = row.habitat || row.surface || row.microhabitat || row.subtrato || "";
-
-  const co2 = toNum(row[co2col]);
-  const units = row.co2_units || row.units || row.unidades || "";
-
-  // Show a curated set first, then show “others”
-  const curated = [
-    ["CO₂", co2, units],
-    ["Date", date, time],
+  const items = [
+    ["CO₂ flux", (co2 === null ? "–" : format(co2)), "mg/m²/day"],
+    ["Date", date, ""],
+    ["Site", site, ""],
     ["Compartment", comp, ""],
-    ["Habitat", habitat, ""],
-    ["Temp (°C)", toNum(row.temp_c ?? row.temperature ?? row.temperatura), ""],
-    ["RH (%)", toNum(row.rh ?? row.humidity ?? row.umidade), ""],
-    ["Cond (µS/cm)", toNum(row.cond_uScm ?? row.condutividade), ""],
-    ["DO (mg/L)", toNum(row.do_mgL ?? row.oxigenio_mgL ?? row["oxigenio_mg_l"]), ""],
-    ["DO (%)", toNum(row.do_pct ?? row.oxigenio_pct ?? row["oxigenio_%"]), ""],
-    ["pH", toNum(row.ph), ""],
+    ["Treatment", treat, ""],
+    ["Characteristic", characteristic, ""],
+    ["Status", status, ""],
+    ["Point", point, ""],
+    ["pH", toNum(r[H.ph]), ""],
+    ["Temp", toNum(r[H.temp]), "°C"],
+    ["Organic matter", toNum(r[H.organic]), ""],
+    ["DO", toNum(r[H.do_mgL]), "mg/L"],
+    ["DO", toNum(r[H.do_pct]), "%"],
+    ["Cond", toNum(r[H.cond]), "µS/cm"],
+    ["Replica", normVal(r[H.replica]), ""],
+    ["Chamber", normVal(r[H.chamber]), ""],
+    ["Author", normVal(r[H.author]), ""],
   ];
 
-  const rowsHTML = curated
-    .filter(([k,v]) => v !== null && v !== "" && v !== undefined)
+  const rowsHTML = items
+    .filter(([k,v]) => v !== null && v !== "" && v !== undefined && v !== "–")
     .map(([k,v,u]) => {
       const val = (typeof v === "number") ? format(v) : String(v);
       const uu = u ? ` <span style="color:#64748b">(${u})</span>` : "";
-      return `<div class="p-row"><b>${k}:</b> ${val}${uu}</div>`;
+      return `<div style="margin:2px 0"><b>${escapeHtml(k)}:</b> ${escapeHtml(val)}${uu}</div>`;
     }).join("");
 
-  // Any extra variables (lightly)
-  const skip = new Set([
-    "lat","lon","site","site_name","local","location","date","data","time","hora",
-    "compartment","compartimento","habitat","surface","microhabitat","subtrato",
-    "co2_units","units","unidades"
-  ]);
-  const extras = Object.keys(row)
-    .filter(k => !skip.has(k) && k !== co2col && normVal(row[k]) !== "")
-    .slice(0, 14)
-    .map(k => `<div class="p-row"><span style="color:#64748b">${k}:</span> ${row[k]}</div>`)
-    .join("");
-
   return `
-    <div style="min-width:240px;max-width:330px">
-      <div style="font-weight:900;margin-bottom:6px">${site}</div>
+    <div style="min-width:240px;max-width:340px">
+      <div style="font-weight:900;margin-bottom:6px">${escapeHtml(site || "Site")}</div>
       ${rowsHTML}
-      ${extras ? `<hr style="border:none;border-top:1px solid #e5e7eb;margin:8px 0">${extras}` : ""}
     </div>
   `;
 }
 
-function refreshMap(rows, co2col){
+function refreshMap(rows, co2Col){
   LAYER.clearLayers();
   const latlngs = [];
 
-  rows.forEach((r) => {
-    const m = makeCircleMarker(r);
-    if (!m) return;
+  rows.forEach(r => {
+    const lat = toNum(r[H.lat]);
+    const lon = toNum(r[H.lon]);
+    if (lat === null || lon === null) return;
 
-    const popup = buildPopupHTML(r, co2col);
+    const comp = r[H.compartment];
+    const color = markerColor(comp);
+
+    const m = L.circleMarker([lat, lon], {
+      radius: 7,
+      weight: 2,
+      color: color,
+      fillColor: color,
+      fillOpacity: 0.25
+    });
+
+    const popup = buildPopupHTML(r, co2Col);
     m.bindPopup(popup, { closeButton: true });
 
     m.on("mouseover", () => m.openPopup());
     m.on("mouseout", () => m.closePopup());
 
     m.addTo(LAYER);
-
-    const lat = toNum(r.lat), lon = toNum(r.lon);
-    if (lat !== null && lon !== null) latlngs.push([lat, lon]);
+    latlngs.push([lat, lon]);
   });
 
   if (latlngs.length){
-    const bounds = L.latLngBounds(latlngs);
-    MAP.fitBounds(bounds.pad(0.2));
+    MAP.fitBounds(L.latLngBounds(latlngs).pad(0.2));
   }
 }
 
-/* ===== Filters + stats ===== */
-function inferColumns(columns){
-  const col = {};
-  col.site = pickFirstExisting(columns, ["site_name","site","local","location","ponto","ponto_nome"]);
-  col.compartment = pickFirstExisting(columns, ["compartment","compartimento"]);
-  col.habitat = pickFirstExisting(columns, ["habitat","surface","microhabitat","subtrato","ambiente"]);
-  col.date = pickFirstExisting(columns, ["date","data"]);
-  col.time = pickFirstExisting(columns, ["time","hora"]);
-
-  // CO2 candidate columns (you can add more names here)
-  col.co2Candidates = columns.filter(c =>
-    /co2|flux|eflux|emission|resp/i.test(c)
-  );
-  if (!col.co2Candidates.length) col.co2Candidates = ["co2_flux"];
-
-  return col;
-}
-
+// ===== Filters + stats =====
 function populateSelect(selectEl, values){
   const current = selectEl.value;
   selectEl.innerHTML = `<option value="">All</option>` + values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
-  // restore if still exists
   if (values.includes(current)) selectEl.value = current;
-}
-
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, (m)=>({
-    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
-  }[m]));
 }
 
 function applyFilters(){
   const fComp = el("f-compartment").value;
-  const fHab = el("f-habitat").value;
+  const fTreat = el("f-treatment").value;
+  const fChar = el("f-characteristic").value;
   const fSite = el("f-site").value;
+  const fStatus = el("f-status").value;
+  const fPoint = el("f-point").value;
   const start = el("f-date-start").value || null;
   const end = el("f-date-end").value || null;
-  const co2col = el("f-co2col").value;
+
+  const co2Col = el("f-co2col").value || H.co2;
 
   FILTERED = RAW.filter(r => {
-    if (fComp && normVal(r.compartment ?? r.compartimento) !== fComp) return false;
-    const hab = normVal(r.habitat ?? r.surface ?? r.microhabitat ?? r.subtrato ?? r.ambiente);
-    if (fHab && hab !== fHab) return false;
-
-    const site = normVal(r.site_name ?? r.site ?? r.local ?? r.location ?? r.ponto ?? r.ponto_nome);
-    if (fSite && site !== fSite) return false;
+    if (fComp && normVal(r[H.compartment]) !== fComp) return false;
+    if (fTreat && normVal(r[H.treatment]) !== fTreat) return false;
+    if (fChar && normVal(r[H.characteristic]) !== fChar) return false;
+    if (fSite && normVal(r[H.site]) !== fSite) return false;
+    if (fStatus && normVal(r[H.status]) !== fStatus) return false;
+    if (fPoint && normVal(r[H.point]) !== fPoint) return false;
 
     if (start || end){
-      const d = toDateISO(r.date ?? r.data);
+      const d = toDateISO(r[H.date]);
       if (!d) return false;
       if (start && d < start) return false;
       if (end && d > end) return false;
@@ -254,52 +251,60 @@ function applyFilters(){
     return true;
   });
 
-  refreshMap(FILTERED, co2col);
-  refreshStats(FILTERED, co2col);
-  refreshCharts(FILTERED, co2col);
-  refreshTable(FILTERED, co2col);
+  refreshMap(FILTERED, co2Col);
+  refreshStats(FILTERED, co2Col);
+  refreshCharts(FILTERED, co2Col);
+  refreshTable(FILTERED, co2Col);
   refreshGaps(FILTERED);
 }
 
-function refreshStats(rows, co2col){
-  const values = rows.map(r => toNum(r[co2col])).filter(v => v !== null);
-  const units = guessUnits(rows);
+function refreshStats(rows, co2Col){
+  const vals = rows.map(r => toNum(r[co2Col])).filter(v => v !== null);
 
-  el("units-note").textContent = units ? `Units (from file): ${units}` : "";
+  el("units-note").textContent = co2Col ? `${co2Col} • units: mg/m²/day` : "";
 
-  el("s-n").textContent = values.length ? `${values.length}` : "0";
-  if (!values.length){
+  el("s-n").textContent = vals.length ? `${vals.length}` : "0";
+  if (!vals.length){
     el("s-min").textContent = "–";
     el("s-max").textContent = "–";
     el("s-mean").textContent = "–";
     el("s-med").textContent = "–";
+    el("s-iqr").textContent = "–";
     return;
   }
-  values.sort((a,b)=>a-b);
-  const min = values[0];
-  const max = values[values.length-1];
-  const mean = values.reduce((a,b)=>a+b,0)/values.length;
-  const med = values.length % 2 ? values[(values.length-1)/2] : (values[values.length/2 -1] + values[values.length/2])/2;
+
+  vals.sort((a,b)=>a-b);
+  const min = vals[0];
+  const max = vals[vals.length-1];
+  const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
+
+  const median = (vals.length % 2)
+    ? vals[(vals.length-1)/2]
+    : (vals[vals.length/2 -1] + vals[vals.length/2]) / 2;
+
+  const q1 = quantile(vals, 0.25);
+  const q3 = quantile(vals, 0.75);
+  const iqr = (q1 !== null && q3 !== null) ? (q3 - q1) : null;
 
   el("s-min").textContent = format(min);
   el("s-max").textContent = format(max);
   el("s-mean").textContent = format(mean);
-  el("s-med").textContent = format(med);
+  el("s-med").textContent = format(median);
+  el("s-iqr").textContent = (iqr === null ? "–" : format(iqr));
 }
 
-function guessUnits(rows){
-  // if your CSV has co2_units/units/unidades, show the most frequent
-  const u = rows.map(r => normVal(r.co2_units ?? r.units ?? r.unidades)).filter(Boolean);
-  if (!u.length) return "";
-  const freq = {};
-  u.forEach(x => freq[x] = (freq[x]||0)+1);
-  return Object.entries(freq).sort((a,b)=>b[1]-a[1])[0][0];
+function quantile(sorted, p){
+  if (!sorted.length) return null;
+  const idx = (sorted.length - 1) * p;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  const w = idx - lo;
+  return sorted[lo]*(1-w) + sorted[hi]*w;
 }
 
-/* ===== Charts ===== */
-function destroyChart(c){
-  if (c) c.destroy();
-}
+// ===== Charts =====
+function destroyChart(c){ if (c) c.destroy(); }
 
 function groupMean(rows, keyFn, valFn){
   const m = new Map();
@@ -314,26 +319,25 @@ function groupMean(rows, keyFn, valFn){
   for (const [k, arr] of m.entries()){
     arr.sort((a,b)=>a-b);
     const mean = arr.reduce((a,b)=>a+b,0)/arr.length;
-    const min = arr[0], max = arr[arr.length-1];
-    out.push({k, mean, min, max, n: arr.length});
+    out.push({k, mean, n: arr.length});
   }
   out.sort((a,b)=>b.mean-a.mean);
   return out;
 }
 
-function refreshCharts(rows, co2col){
-  const co2 = (r)=>toNum(r[co2col]);
+function refreshCharts(rows, co2Col){
+  const co2 = (r)=>toNum(r[co2Col]);
 
-  // Compare: group by compartment + habitat
+  // Compare: SOLO/ÁGUA × TRATAMENTO
   const cmp = groupMean(
     rows,
     (r)=>{
-      const c = normVal(r.compartment ?? r.compartimento) || "NA";
-      const h = normVal(r.habitat ?? r.surface ?? r.microhabitat ?? r.subtrato ?? r.ambiente) || "NA";
-      return `${c} • ${h}`;
+      const c = normVal(r[H.compartment]) || "NA";
+      const t = normVal(r[H.treatment]) || "NA";
+      return `${c} • ${t}`;
     },
     co2
-  ).slice(0, 12);
+  ).slice(0, 14);
 
   const ctx1 = document.getElementById("chart-compare");
   destroyChart(chartCompare);
@@ -341,25 +345,19 @@ function refreshCharts(rows, co2col){
     type: "bar",
     data: {
       labels: cmp.map(x=>x.k),
-      datasets: [{
-        label: "Mean CO₂",
-        data: cmp.map(x=>x.mean)
-      }]
+      datasets: [{ label: "Mean CO₂", data: cmp.map(x=>x.mean) }]
     },
     options: {
       responsive: true,
       plugins: { legend: { display: false }},
-      scales: {
-        x: { ticks: { maxRotation: 60, minRotation: 40 } },
-        y: { beginAtZero: false }
-      }
+      scales: { x: { ticks: { maxRotation: 60, minRotation: 35 } } }
     }
   });
 
-  // Timeline: CO2 by date (mean per day)
+  // Timeline: daily mean CO2
   const byDay = groupMean(
     rows,
-    (r)=>toDateISO(r.date ?? r.data) || null,
+    (r)=>toDateISO(r[H.date]) || null,
     co2
   ).sort((a,b)=>a.k.localeCompare(b.k));
 
@@ -379,16 +377,13 @@ function refreshCharts(rows, co2col){
     options: {
       responsive: true,
       plugins: { legend: { display: false }},
-      scales: {
-        x: { ticks: { maxTicksLimit: 10 }},
-        y: { beginAtZero: false }
-      }
+      scales: { x: { ticks: { maxTicksLimit: 10 } } }
     }
   });
 }
 
-/* ===== Table ===== */
-function refreshTable(rows, co2col){
+// ===== Table =====
+function refreshTable(rows, co2Col){
   const t = el("table");
   const shown = rows.slice(0, 200);
 
@@ -398,55 +393,56 @@ function refreshTable(rows, co2col){
   }
 
   const cols = Object.keys(shown[0]);
-  // keep important first
-  const first = ["site_name","site","local","location","date","data","time","hora","compartment","compartimento","habitat","surface","microhabitat","subtrato","lat","lon", co2col];
-  const ordered = [...new Set([...first, ...cols])].filter(c => cols.includes(c) || c === co2col);
+  const first = [
+    H.site, H.date, H.compartment, H.treatment, H.characteristic, H.status, H.point,
+    H.lat, H.lon, co2Col, H.temp, H.ph, H.do_mgL, H.do_pct, H.cond, H.replica, H.chamber, H.author
+  ].filter(Boolean);
+
+  const ordered = [...new Set([...first, ...cols])].filter(c => cols.includes(c) || c === co2Col);
 
   const thead = `<tr>${ordered.map(c=>`<th>${escapeHtml(c)}</th>`).join("")}</tr>`;
-  const tbody = shown.map(r => {
-    return `<tr>${ordered.map(c=>`<td>${escapeHtml(r[c] ?? "")}</td>`).join("")}</tr>`;
-  }).join("");
+  const tbody = shown.map(r => `<tr>${ordered.map(c=>`<td>${escapeHtml(r[c] ?? "")}</td>`).join("")}</tr>`).join("");
 
   t.innerHTML = thead + tbody;
 }
 
-/* ===== Gaps ===== */
+// ===== Gaps =====
 function refreshGaps(rows){
   const box = el("gaps");
   box.innerHTML = "";
 
-  const comps = unique(rows.map(r => normVal(r.compartment ?? r.compartimento) || "NA"));
-  const habs = unique(rows.map(r => normVal(r.habitat ?? r.surface ?? r.microhabitat ?? r.subtrato ?? r.ambiente) || "NA"));
+  const comps = unique(rows.map(r => normVal(r[H.compartment]) || "NA"));
+  const treats = unique(rows.map(r => normVal(r[H.treatment]) || "NA"));
 
-  if (!comps.length || !habs.length){
-    box.innerHTML = `<div class="gap-item">Not enough metadata to compute gaps (need compartment + habitat columns).</div>`;
+  if (!comps.length || !treats.length){
+    box.innerHTML = `<div class="gap-item">Not enough metadata to compute gaps.</div>`;
     return;
   }
 
   const seen = new Set();
   rows.forEach(r => {
-    const c = normVal(r.compartment ?? r.compartimento) || "NA";
-    const h = normVal(r.habitat ?? r.surface ?? r.microhabitat ?? r.subtrato ?? r.ambiente) || "NA";
-    seen.add(`${c}||${h}`);
+    const c = normVal(r[H.compartment]) || "NA";
+    const t = normVal(r[H.treatment]) || "NA";
+    seen.add(`${c}||${t}`);
   });
 
   const missing = [];
   for (const c of comps){
-    for (const h of habs){
-      const key = `${c}||${h}`;
-      if (!seen.has(key)) missing.push({c,h});
+    for (const t of treats){
+      const key = `${c}||${t}`;
+      if (!seen.has(key)) missing.push({c,t});
     }
   }
 
   if (!missing.length){
-    box.innerHTML = `<div class="gap-item">No missing combinations found (compartment × habitat) in current filters.</div>`;
+    box.innerHTML = `<div class="gap-item">No missing combinations found (SOLO/ÁGUA × TRATAMENTO) in current filters.</div>`;
     return;
   }
 
   missing.slice(0, 20).forEach(x => {
     const d = document.createElement("div");
     d.className = "gap-item";
-    d.textContent = `Missing: ${x.c} × ${x.h}`;
+    d.textContent = `Missing: ${x.c} × ${x.t}`;
     box.appendChild(d);
   });
 
@@ -458,89 +454,57 @@ function refreshGaps(rows){
   }
 }
 
-/* ===== Boot ===== */
+// ===== Load CSV (semicolon + BOM safe) =====
 async function loadCSV(){
   return new Promise((resolve, reject) => {
     Papa.parse(DATA_URL, {
       download: true,
       header: true,
-      dynamicTyping: false,
+      delimiter: ";",         // IMPORTANT for your data
       skipEmptyLines: true,
+      transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(), // remove BOM
       complete: (res) => resolve(res.data),
       error: (err) => reject(err)
     });
   });
 }
 
-function normalizeRows(rows){
-  // normalize key names to lower_snake when possible (light-touch)
-  // IMPORTANT: keep original columns too, but we ensure lat/lon/date fields exist.
-  const out = rows.map(r => {
-    const obj = {};
-    for (const [k,v] of Object.entries(r)){
-      const key = normKey(k);
-      obj[key] = normVal(v);
-    }
-
-    // Alias common coordinate names into lat/lon
-    if (!obj.lat){
-      obj.lat = obj.latitude || obj.Latitude || obj.LAT || obj.LATITUDE || "";
-    }
-    if (!obj.lon){
-      obj.lon = obj.longitude || obj.Longitude || obj.LON || obj.LONGITUDE || obj.lng || "";
-    }
-    return obj;
-  });
-
-  return out;
-}
-
-function validate(rows){
-  const cols = Object.keys(rows[0] || {});
-  const missing = REQUIRED.filter(k => !cols.includes(k));
-  return { cols, missing };
-}
-
-function initUI(cols){
-  const inferred = inferColumns(cols);
-
-  // CO2 column selector
+function initUI(){
+  // CO2 selector: in your file, default is exactly H.co2
   const co2Sel = el("f-co2col");
-  co2Sel.innerHTML = inferred.co2Candidates.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
-  if (!inferred.co2Candidates.length){
-    co2Sel.innerHTML = `<option value="co2_flux">co2_flux</option>`;
-  }
+  const candidates = [H.co2].filter(Boolean);
+  co2Sel.innerHTML = candidates.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+  co2Sel.value = H.co2;
 
-  // Populate other filter options from data
-  populateFilterOptions();
-}
-
-function populateFilterOptions(){
-  const comps = unique(RAW.map(r => normVal(r.compartment ?? r.compartimento)));
-  const habs = unique(RAW.map(r => normVal(r.habitat ?? r.surface ?? r.microhabitat ?? r.subtrato ?? r.ambiente)));
-  const sites = unique(RAW.map(r => normVal(r.site_name ?? r.site ?? r.local ?? r.location ?? r.ponto ?? r.ponto_nome)));
-
-  populateSelect(el("f-compartment"), comps);
-  populateSelect(el("f-habitat"), habs);
-  populateSelect(el("f-site"), sites);
+  // Populate filter options from RAW
+  populateSelect(el("f-compartment"), unique(RAW.map(r => normVal(r[H.compartment]))));
+  populateSelect(el("f-treatment"), unique(RAW.map(r => normVal(r[H.treatment]))));
+  populateSelect(el("f-characteristic"), unique(RAW.map(r => normVal(r[H.characteristic]))));
+  populateSelect(el("f-site"), unique(RAW.map(r => normVal(r[H.site]))));
+  populateSelect(el("f-status"), unique(RAW.map(r => normVal(r[H.status]))));
+  populateSelect(el("f-point"), unique(RAW.map(r => normVal(r[H.point]))));
 }
 
 function wireEvents(){
   el("btn-apply").addEventListener("click", applyFilters);
+
   el("btn-reset").addEventListener("click", () => {
     el("f-compartment").value = "";
-    el("f-habitat").value = "";
+    el("f-treatment").value = "";
+    el("f-characteristic").value = "";
     el("f-site").value = "";
+    el("f-status").value = "";
+    el("f-point").value = "";
     el("f-date-start").value = "";
     el("f-date-end").value = "";
     applyFilters();
   });
 
   el("btn-fit").addEventListener("click", () => {
-    // Fit current layer
     const latlngs = [];
     FILTERED.forEach(r => {
-      const lat = toNum(r.lat), lon = toNum(r.lon);
+      const lat = toNum(r[H.lat]);
+      const lon = toNum(r[H.lon]);
       if (lat !== null && lon !== null) latlngs.push([lat, lon]);
     });
     if (latlngs.length){
@@ -549,33 +513,34 @@ function wireEvents(){
   });
 }
 
+// ===== Boot =====
 (async function boot(){
   initCO2Float();
   initMap();
   wireEvents();
 
   try{
-    const rows = await loadCSV();
-    RAW = normalizeRows(rows);
+    RAW = await loadCSV();
 
     if (!RAW.length){
       alert("data/data.csv loaded, but it has no rows.");
       return;
     }
 
-    const { cols, missing } = validate(RAW);
-    if (missing.length){
-      alert(`Missing required columns: ${missing.join(", ")}. Please ensure your CSV has lat and lon columns (or latitude/longitude).`);
+    // quick validation (coords)
+    const hasLat = Object.prototype.hasOwnProperty.call(RAW[0], H.lat);
+    const hasLon = Object.prototype.hasOwnProperty.call(RAW[0], H.lon);
+    if (!hasLat || !hasLon){
+      alert(`Missing coordinate columns. Expected "${H.lat}" and "${H.lon}".`);
       return;
     }
 
-    initUI(cols);
-    // initial render
+    initUI();
     FILTERED = RAW;
     applyFilters();
 
   }catch(e){
     console.error(e);
-    alert("Failed to load data/data.csv. Check that the file exists and is a valid CSV with commas.");
+    alert("Failed to load data/data.csv. Check that the file exists and is a valid semicolon-separated CSV (;).");
   }
 })();
