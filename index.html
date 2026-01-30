@@ -1,167 +1,735 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CO2-pantanal</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>CO2-Play — Upload Excel → Curva → R² → Fluxo</title>
 
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-
-  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-  <!-- PapaParse (CSV) -->
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-
-  <link rel="stylesheet" href="assets/style.css" />
+  <style>
+    :root{
+      --bg:#070b16; --card:#0f1a33; --line:rgba(255,255,255,.12);
+      --text:#f2f7ff; --muted:#c7d6ff; --muted2:#9fb3e6;
+      --blue:#3b82f6; --green:#22c55e; --orange:#f97316; --pink:#ec4899; --red:#ef4444;
+      --shadow:0 18px 48px rgba(0,0,0,.35); --r:18px;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;color:var(--text);
+      background:radial-gradient(900px 500px at 30% -10%, rgba(59,130,246,.30), transparent 60%),
+               radial-gradient(800px 500px at 90% 10%, rgba(236,72,153,.24), transparent 60%),
+               radial-gradient(900px 700px at 50% 110%, rgba(34,197,94,.18), transparent 60%),
+               linear-gradient(180deg, #050812, var(--bg));
+    }
+    header{position:sticky;top:0;z-index:2;backdrop-filter:blur(10px);
+      background:rgba(7,11,22,.78); border-bottom:1px solid var(--line);}
+    .top{max-width:1200px;margin:0 auto;padding:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+    .brand h1{margin:0;font-size:16px}
+    .brand p{margin:4px 0 0;font-size:12px;color:var(--muted2)}
+    main{max-width:1200px;margin:0 auto;padding:14px}
+    .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}
+    @media(max-width:980px){.grid{grid-template-columns:1fr}}
+    .card{background:rgba(15,26,51,.93); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden;}
+    .hd{padding:12px 14px;display:flex;align-items:center;justify-content:space-between;
+      background:linear-gradient(180deg, rgba(255,255,255,.06), transparent); border-bottom:1px solid var(--line);}
+    .hd h2{margin:0;font-size:14px}
+    .bd{padding:14px}
+    label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
+    input, select, textarea{
+      width:100%;padding:11px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.16);
+      background:rgba(255,255,255,.08);color:var(--text);outline:none;
+    }
+    input::placeholder, textarea::placeholder{color:rgba(242,247,255,.55)}
+    textarea{min-height:84px;resize:vertical}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .col{flex:1;min-width:180px}
+    .btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+    button{border:0;border-radius:14px;padding:10px 12px;font-weight:900;cursor:pointer;color:#071022;
+      box-shadow:0 12px 26px rgba(0,0,0,.30); transition:transform .06s ease;}
+    button:active{transform:scale(.98)}
+    .b-blue{background:linear-gradient(90deg,var(--blue),#60a5fa)}
+    .b-green{background:linear-gradient(90deg,var(--green),#86efac)}
+    .b-orange{background:linear-gradient(90deg,var(--orange),#fdba74)}
+    .b-pink{background:linear-gradient(90deg,var(--pink),#f9a8d4)}
+    .b-red{background:linear-gradient(90deg,var(--red),#fca5a5)}
+    .ghost{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,.18);box-shadow:none}
+    .pill{display:inline-flex;gap:8px;align-items:center;padding:3px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.18);
+      background:rgba(255,255,255,.05); font-size:12px; color:var(--muted)}
+    .status{margin-top:10px;padding:10px 12px;border-radius:14px;border:1px dashed rgba(255,255,255,.22);
+      background:rgba(255,255,255,.05);font-size:12px;color:var(--muted);white-space:pre-wrap}
+    canvas{width:100%;height:360px;background:rgba(7,11,22,.35);border:1px solid var(--line);border-radius:16px;}
+    .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+    .kpi{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);border-radius:14px;padding:10px}
+    .kpi .v{font-size:16px;font-weight:950}
+    .kpi .k{font-size:11px;color:var(--muted);margin-top:2px}
+    table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid rgba(255,255,255,.16);
+      border-radius:14px;background:rgba(11,20,43,.7);overflow:hidden}
+    th,td{font-size:12px;padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
+    th{color:#eaf1ff;background:rgba(255,255,255,.06)}
+    tr:last-child td{border-bottom:none}
+    .small{font-size:11px;color:var(--muted2);margin-top:6px;line-height:1.35}
+    .split{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .toggle{
+      display:flex;gap:8px;align-items:center;border:1px solid rgba(255,255,255,.18);
+      background:rgba(255,255,255,.05);padding:8px 10px;border-radius:14px;
+      font-size:12px;color:var(--text);
+    }
+    .toggle input{width:auto}
+    input[type="range"]{padding:0;height:34px;background:transparent;border:0}
+    .rangeBox{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);border-radius:14px;padding:10px}
+    .rangeHdr{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--muted)}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+    .warn{color:#ffd38a}
+    .ok{color:#a7ffcc}
+  </style>
 </head>
 
 <body>
-  <!-- CO2 bubbles (front, non-blocking) -->
-  <div id="co2-float-layer" aria-hidden="true"></div>
-
-  <header class="topbar">
+<header>
+  <div class="top">
     <div class="brand">
-      <div class="brand-title">CO2-pantanal</div>
-      <div class="brand-subtitle">Internal dashboard • map + filters + comparisons</div>
+      <h1>CO2-Play — curva + reta em tempo real</h1>
+      <p>Agora você pode usar <b>horário (HH:MM:SS)</b> ou <b>tempo em segundos</b> e ajustar a janela com sliders.</p>
     </div>
+    <div class="pill" id="fileInfo">sem arquivo</div>
+  </div>
+</header>
 
-    <div class="top-actions">
-      <button id="btn-fit" class="btn">Fit map</button>
-      <button id="btn-reset" class="btn btn-ghost">Reset</button>
-    </div>
-  </header>
+<main>
+  <div class="grid">
 
-  <main class="layout">
-    <aside class="panel">
-      <div class="panel-section">
-        <div class="section-title">Data source</div>
-        <div class="small">
-          File: <code>data/data.csv</code> (semicolon-separated <code>;</code>)<br/>
-          If the map is empty, check coordinates + CSV delimiter.
-        </div>
+    <section class="card">
+      <div class="hd">
+        <h2>1) Upload, Tempo e Curva</h2>
+        <span class="pill" id="ptsInfo">0 pontos</span>
       </div>
+      <div class="bd">
+        <label>Arquivo Excel (.xlsx/.xls)</label>
+        <input id="file" type="file" accept=".xlsx,.xls"/>
 
-      <div class="panel-section">
-        <div class="section-title">Filters</div>
-
-        <label class="label">Compartment (SOLO/ÁGUA)</label>
         <div class="row">
-          <select id="f-compartment" class="select">
-            <option value="">All</option>
-          </select>
+          <div class="col">
+            <label>Aba</label>
+            <select id="sheet"></select>
+          </div>
+          <div class="col">
+            <label>Linha do cabeçalho</label>
+            <input id="headerRow" type="number" value="1" min="1"/>
+          </div>
         </div>
 
-        <label class="label">Treatment (TRATAMENTO)</label>
-        <div class="row">
-          <select id="f-treatment" class="select">
-            <option value="">All</option>
-          </select>
-        </div>
-
-        <label class="label">Local characteristic (CARACTERÍSTICA LOCAL)</label>
-        <div class="row">
-          <select id="f-characteristic" class="select">
-            <option value="">All</option>
-          </select>
-        </div>
-
-        <label class="label">Site (NOME DO LOCAL)</label>
-        <div class="row">
-          <select id="f-site" class="select">
-            <option value="">All</option>
-          </select>
-        </div>
-
-        <label class="label">Status (STATUS AMBIENTAL)</label>
-        <div class="row">
-          <select id="f-status" class="select">
-            <option value="">All</option>
-          </select>
-        </div>
-
-        <label class="label">Point (PONTO)</label>
-        <div class="row">
-          <select id="f-point" class="select">
-            <option value="">All</option>
-          </select>
-        </div>
-
-        <label class="label">Date (start → end)</label>
-        <div class="row row-2">
-          <input id="f-date-start" class="input" type="date" />
-          <input id="f-date-end" class="input" type="date" />
-        </div>
-
-        <label class="label">CO₂ column</label>
-        <div class="row">
-          <select id="f-co2col" class="select"></select>
+        <label>Modo de tempo</label>
+        <div class="split">
+          <label class="toggle"><input type="radio" name="tmode" id="modeSec" checked> Já tenho tempo em <b>segundos</b></label>
+          <label class="toggle"><input type="radio" name="tmode" id="modeClock"> Tenho <b>horário</b> (HH:MM:SS)</label>
         </div>
 
         <div class="row">
-          <button id="btn-apply" class="btn btn-primary">Apply</button>
+          <div class="col">
+            <label id="labT">Tempo (segundos)</label>
+            <select id="colT"></select>
+            <div class="small" id="hintT">dica: normalmente C — time2</div>
+          </div>
+          <div class="col">
+            <label>CO₂ (ppm)</label>
+            <select id="colC"></select>
+            <div class="small" id="hintC">dica: normalmente F — CO2(ppm)</div>
+          </div>
         </div>
+
+        <div id="clockBox" style="display:none">
+          <label>Se o Excel estiver ruim, cole aqui uma lista de horários (1 por linha) para substituir a coluna</label>
+          <textarea id="manualTimes" placeholder="Ex:
+10:02:15
+10:02:20
+10:02:25"></textarea>
+          <div class="small">Aceita HH:MM:SS ou HH:MM. O app transforma em “segundos desde o primeiro horário”.</div>
+        </div>
+
+        <div class="btns">
+          <button class="ghost" id="btnGuess">Auto-detectar</button>
+          <button class="b-blue" id="btnLoad">Carregar curva</button>
+          <button class="ghost" id="btnDiag">Diagnóstico</button>
+        </div>
+
+        <div class="status" id="status">Suba o arquivo → Auto-detectar → Carregar curva.</div>
+
+        <div style="margin-top:12px"><canvas id="chart"></canvas></div>
+
+        <div class="row" style="margin-top:10px">
+          <div class="col rangeBox">
+            <div class="rangeHdr">
+              <div>Janela (ajuste e veja a reta na hora)</div>
+              <div class="pill mono" id="winChip">—</div>
+            </div>
+            <label>Início</label>
+            <input id="r0" type="range" min="0" max="0" value="0" step="1"/>
+            <label>Fim</label>
+            <input id="rf" type="range" min="0" max="0" value="0" step="1"/>
+            <div class="small">Dica: depois de carregar, mexa nos sliders. O R² e o fluxo atualizam automaticamente.</div>
+          </div>
+          <div class="col" style="min-width:260px;max-height:220px;overflow:auto">
+            <table>
+              <thead><tr><th>t (s)</th><th>CO₂ (ppm)</th><th class="mono">hora</th></tr></thead>
+              <tbody id="preview"></tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
+    </section>
 
-      <div class="panel-section">
-        <div class="section-title">Quick stats (filtered)</div>
-        <div class="stats">
-          <div class="stat"><span class="k">N</span><span class="v" id="s-n">–</span></div>
-          <div class="stat"><span class="k">Min</span><span class="v" id="s-min">–</span></div>
-          <div class="stat"><span class="k">Max</span><span class="v" id="s-max">–</span></div>
-          <div class="stat"><span class="k">Mean</span><span class="v" id="s-mean">–</span></div>
-          <div class="stat"><span class="k">Median</span><span class="v" id="s-med">–</span></div>
-          <div class="stat"><span class="k">IQR</span><span class="v" id="s-iqr">–</span></div>
-        </div>
-        <div class="small muted" id="units-note"></div>
+    <aside class="card">
+      <div class="hd">
+        <h2>2) R², Slope e Fluxo</h2>
+        <span class="pill" id="fitInfo">sem ajuste</span>
       </div>
-
-      <div class="panel-section">
-        <div class="section-title">Research gaps</div>
-        <div class="small">
-          Missing combos across <b>SOLO/ÁGUA × TRATAMENTO</b> (within your filters).
+      <div class="bd">
+        <div class="btns">
+          <button class="b-green" id="btnAutoFit">Melhor reta (R² máximo)</button>
+          <button class="ghost" id="btnResetFit">Limpar ajuste</button>
         </div>
-        <div id="gaps" class="gaps"></div>
+
+        <div class="row">
+          <div class="col"><label>Manual t_ini (s)</label><input id="t0" type="number" step="1"/></div>
+          <div class="col"><label>Manual t_fim (s)</label><input id="tf" type="number" step="1"/></div>
+        </div>
+        <div class="btns">
+          <button class="b-blue" id="btnManualFit">Calcular (manual)</button>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi"><div class="v" id="k_r2">—</div><div class="k">R²</div></div>
+          <div class="kpi"><div class="v" id="k_slope">—</div><div class="k">Slope (ppm/s)</div></div>
+          <div class="kpi"><div class="v" id="k_win">—</div><div class="k">Janela (s)</div></div>
+          <div class="kpi"><div class="v" id="k_flux">—</div><div class="k">Fluxo (mg m⁻² h⁻¹)</div></div>
+        </div>
+
+        <label>Variáveis do Fluxo (editáveis)</label>
+        <div class="row">
+          <div class="col"><label>V (m³)</label><input id="V" type="number" value="0.010" step="0.0001"/></div>
+          <div class="col"><label>A (m²)</label><input id="A" type="number" value="0.070" step="0.0001"/></div>
+        </div>
+        <div class="row">
+          <div class="col"><label>P (Pa)</label><input id="P" type="number" value="101325"/></div>
+          <div class="col"><label>T (°C)</label><input id="T" type="number" value="25" step="0.1"/></div>
+        </div>
+
+        <div class="btns">
+          <button class="b-orange" id="btnRecalcFlux">Recalcular fluxo</button>
+        </div>
+
+        <div class="status" id="status2">
+          <span class="ok">✔</span> Se você usar “Tenho horário”, o tempo vira “segundos desde o primeiro horário”.
+          <br><span class="warn">⚠</span> Se seus horários cruzam meia-noite, me avise que eu ajusto o algoritmo.
+        </div>
       </div>
     </aside>
 
-    <section class="content">
-      <div class="card map-card">
-        <div class="card-title">Sampling map</div>
-        <div class="card-subtitle">Hover a point to preview • Click for full record</div>
-        <div id="map"></div>
-      </div>
+  </div>
+</main>
 
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-title">Comparison</div>
-          <div class="card-subtitle">Mean CO₂ by group (SOLO/ÁGUA × TRATAMENTO)</div>
-          <canvas id="chart-compare" height="140"></canvas>
-        </div>
+<script>
+let wb=null, cols=[], colIdToIdx=new Map();
+let series=[];          // [{t,c,clock}]
+let chart=null;
+let currentFit=null;
 
-        <div class="card">
-          <div class="card-title">Timeline</div>
-          <div class="card-subtitle">CO₂ over time (daily mean)</div>
-          <canvas id="chart-time" height="140"></canvas>
-        </div>
-      </div>
+const $=id=>document.getElementById(id);
+const setStatus=m=>$("status").textContent=m;
+const pill=(id,m)=>$(id).textContent=m;
 
-      <div class="card table-card">
-        <div class="card-title">Filtered records</div>
-        <div class="card-subtitle">Top 200 rows (fast + light)</div>
-        <div class="table-wrap">
-          <table class="table" id="table"></table>
-        </div>
-      </div>
+function toNum(x){
+  const n = Number(x);
+  return Number.isFinite(n) ? n : NaN;
+}
+function colLetter(i){
+  let n=i+1, s="";
+  while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26); }
+  return s;
+}
+function esc(s){
+  return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m]));
+}
 
-      <footer class="footer small muted">
-        CO2-pantanal • static GitHub Pages friendly • no backend
-      </footer>
-    </section>
-  </main>
+function isClockMode(){ return $("modeClock").checked; }
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="assets/app.js"></script>
+function parseClockToSeconds(clock){
+  // Aceita "HH:MM" ou "HH:MM:SS" ou Excel Date (número)
+  if(clock===null || clock===undefined) return NaN;
+
+  if(typeof clock === "number" && Number.isFinite(clock)){
+    // Excel time fraction of day -> seconds
+    // (se for data/hora completa, a fração também funciona como hora do dia)
+    const frac = clock % 1;
+    return Math.round(frac * 24 * 3600);
+  }
+
+  const s = String(clock).trim();
+  if(!s) return NaN;
+
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if(!m) return NaN;
+  const hh = Number(m[1]), mm = Number(m[2]), ss = Number(m[3]||0);
+  if(hh>23 || mm>59 || ss>59) return NaN;
+  return hh*3600 + mm*60 + ss;
+}
+
+function secondsToClock(sec){
+  if(!Number.isFinite(sec)) return "";
+  sec = Math.round(sec);
+  const hh = Math.floor(sec/3600)%24;
+  const mm = Math.floor((sec%3600)/60);
+  const ss = sec%60;
+  return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0")+":"+String(ss).padStart(2,"0");
+}
+
+function setTimeLabels(){
+  if(isClockMode()){
+    $("labT").textContent = "Horário (HH:MM:SS)";
+    $("clockBox").style.display = "";
+  } else {
+    $("labT").textContent = "Tempo (segundos)";
+    $("clockBox").style.display = "none";
+  }
+}
+$("modeSec").addEventListener("change", setTimeLabels);
+$("modeClock").addEventListener("change", setTimeLabels);
+
+$("file").addEventListener("change", async (ev)=>{
+  const f=ev.target.files?.[0];
+  if(!f) return;
+  const buf=await f.arrayBuffer();
+  wb=XLSX.read(buf,{type:"array"});
+  $("sheet").innerHTML = wb.SheetNames.map(n=>`<option>${esc(n)}</option>`).join("");
+  pill("fileInfo", f.name);
+  setStatus("Arquivo carregado. Clique Auto-detectar.");
+});
+
+$("btnGuess").addEventListener("click", ()=>{
+  if(!wb) return setStatus("Suba um Excel primeiro.");
+  buildColumns();
+  autoPickColumns();
+  setStatus("Auto-detect feito. Clique Carregar curva.");
+});
+
+$("btnLoad").addEventListener("click", ()=>{
+  if(!wb) return setStatus("Suba um Excel primeiro.");
+  if(!cols.length) buildColumns();
+  loadCurve();
+});
+
+$("btnDiag").addEventListener("click", ()=>{
+  if(!wb) return setStatus("Suba um Excel primeiro.");
+  if(!cols.length) buildColumns();
+  const msg = [
+    `Aba: ${$("sheet").value}`,
+    `Header row: ${$("headerRow").value}`,
+    `Modo tempo: ${isClockMode() ? "horário" : "segundos"}`,
+    `Tempo selecionado: ${$("colT").value} (${labelOf($("colT").value)})`,
+    `CO2 selecionado: ${$("colC").value} (${labelOf($("colC").value)})`,
+    `Pontos carregados: ${series.length}`
+  ].join("\n");
+  setStatus(msg);
+});
+
+function buildColumns(){
+  const sheet=$("sheet").value;
+  const hrow=Math.max(1, Number($("headerRow").value||1));
+  const ws=wb.Sheets[sheet];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:""});
+  const header=(rows[hrow-1]||[]).map(h=>String(h??"").trim());
+
+  cols = header.map((name,i)=>({
+    idx:i,
+    id:`c${i}`,
+    name: name || `(col ${colLetter(i)})`
+  }));
+  colIdToIdx = new Map(cols.map(c=>[c.id,c.idx]));
+
+  const opts = cols.map(c=>`<option value="${esc(c.id)}">${esc(colLetter(c.idx))} — ${esc(c.name)}</option>`).join("");
+  $("colT").innerHTML = opts;
+  $("colC").innerHTML = opts;
+}
+
+function scoreNumeric(colIdx){
+  const sheet=$("sheet").value;
+  const hrow=Math.max(1, Number($("headerRow").value||1));
+  const ws=wb.Sheets[sheet];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:""});
+  const data = rows.slice(hrow, hrow+120);
+  let ok=0, tot=0;
+  for(const r of data){
+    const v=r[colIdx];
+    if(v===null||v===undefined||v==="") continue;
+    tot++;
+    if(Number.isFinite(Number(v))) ok++;
+  }
+  return tot? ok/tot : 0;
+}
+
+function scoreClock(colIdx){
+  const sheet=$("sheet").value;
+  const hrow=Math.max(1, Number($("headerRow").value||1));
+  const ws=wb.Sheets[sheet];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:""});
+  const data = rows.slice(hrow, hrow+120);
+  let ok=0, tot=0;
+  for(const r of data){
+    const v=r[colIdx];
+    if(v===null||v===undefined||v==="") continue;
+    tot++;
+    const s=parseClockToSeconds(v);
+    if(Number.isFinite(s)) ok++;
+  }
+  return tot? ok/tot : 0;
+}
+
+function autoPickColumns(){
+  let bestT=null, bestC=null;
+
+  for(const c of cols){
+    const nm=c.name.toLowerCase();
+    const scNum=scoreNumeric(c.idx);
+    const scClk=scoreClock(c.idx);
+
+    // tempo: se estiver em modo horário, preferir colunas "time/date/hora" e com parse alto de relógio
+    if(isClockMode()){
+      const bonus = (/(hora|time|clock|hh|date)/.test(nm) ? 1 : 0);
+      const tScore = scClk + bonus;
+      if(!bestT || tScore>bestT.score) bestT={id:c.id, score:tScore, detail:scClk, nm};
+    } else {
+      // segundos
+      const bonus = (/(time2|seconds|tempo_s|sec)/.test(nm) ? 2 : /(time|tempo)/.test(nm) ? 1 : 0);
+      const tScore = scNum + bonus;
+      if(!bestT || tScore>bestT.score) bestT={id:c.id, score:tScore, detail:scNum, nm};
+    }
+
+    // co2
+    const cBonus = (/^co2\(ppm\)$/.test(nm) ? 2 : /co2/.test(nm) ? 1 : 0);
+    const cScore = scNum + cBonus;
+    if(!bestC || cScore>bestC.score) bestC={id:c.id, score:cScore, detail:scNum, nm};
+  }
+
+  if(bestT) $("colT").value = bestT.id;
+  if(bestC) $("colC").value = bestC.id;
+
+  $("hintT").textContent = isClockMode()
+    ? `auto: ${labelOf(bestT?.id)} (clock=${(bestT?.detail||0).toFixed(2)})`
+    : `auto: ${labelOf(bestT?.id)} (num=${(bestT?.detail||0).toFixed(2)})`;
+
+  $("hintC").textContent = `auto: ${labelOf(bestC?.id)} (num=${(bestC?.detail||0).toFixed(2)})`;
+}
+
+function labelOf(colId){
+  const idx = colIdToIdx.get(colId);
+  const c = cols.find(x=>x.id===colId);
+  if(idx===undefined || !c) return "(?)";
+  return `${colLetter(idx)} — ${c.name}`;
+}
+
+function getManualTimes(){
+  const raw = $("manualTimes").value || "";
+  const lines = raw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  if(!lines.length) return null;
+  const secs = lines.map(parseClockToSeconds);
+  if(secs.some(x=>!Number.isFinite(x))) return {error:true, message:"Tem horário inválido no texto colado. Use HH:MM ou HH:MM:SS."};
+  return {secs};
+}
+
+function loadCurve(){
+  const sheet=$("sheet").value;
+  const hrow=Math.max(1, Number($("headerRow").value||1));
+  const ws=wb.Sheets[sheet];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:""});
+  const tIdx = colIdToIdx.get($("colT").value);
+  const cIdx = colIdToIdx.get($("colC").value);
+
+  if(tIdx===undefined || cIdx===undefined){
+    setStatus("Selecione Tempo e CO2.");
+    return;
+  }
+
+  // Se tiver tempos manuais, eles substituem a coluna
+  let manual = null;
+  if(isClockMode()){
+    const mt = getManualTimes();
+    if(mt?.error){
+      setStatus(mt.message);
+      return;
+    }
+    manual = mt?.secs || null;
+  }
+
+  series=[];
+  const dataRows = rows.slice(hrow);
+
+  for(let i=0;i<dataRows.length;i++){
+    const r=dataRows[i];
+    const c=toNum(r[cIdx]);
+    if(!Number.isFinite(c)) continue;
+
+    if(isClockMode()){
+      const clkRaw = manual ? manual[i] : parseClockToSeconds(r[tIdx]);
+      if(!Number.isFinite(clkRaw)) continue;
+      series.push({t:clkRaw, c, clock: secondsToClock(clkRaw)});
+    } else {
+      const t=toNum(r[tIdx]);
+      if(!Number.isFinite(t)) continue;
+      series.push({t, c, clock:""});
+    }
+  }
+
+  if(series.length<3){
+    pill("ptsInfo", `${series.length} pontos`);
+    setStatus("Não achei pontos suficientes. Confira coluna de CO₂ e tempo/horário.");
+    drawChart(null);
+    resetFit();
+    return;
+  }
+
+  // Se for horário: converter para segundos desde o primeiro horário
+  if(isClockMode()){
+    series.sort((a,b)=>a.t-b.t);
+    const t0 = series[0].t;
+    for(const p of series){ p.t = p.t - t0; } // segundos desde o início
+  } else {
+    series.sort((a,b)=>a.t-b.t);
+  }
+
+  pill("ptsInfo", `${series.length} pontos`);
+  renderPreview();
+  setStatus(`Curva OK ✅ Tempo=${labelOf($("colT").value)} | CO2=${labelOf($("colC").value)}.\nAgora: mexa nos sliders (início/fim) para ver a reta nascer.`);
+
+  // configurar sliders
+  setupRanges();
+
+  // desenhar sem ajuste
+  resetFit();
+  drawChart(null);
+
+  // aplicar ajuste inicial (janela total)
+  fitFromRanges(true);
+}
+
+function renderPreview(){
+  const tb=$("preview");
+  tb.innerHTML="";
+  const show = series.slice(0,8).concat(series.length>12 ? [{t:"…",c:"…",clock:"…"}] : []).concat(series.slice(-4));
+  for(const p of show){
+    const tr=document.createElement("tr");
+    tr.innerHTML = `<td>${esc(p.t)}</td><td>${esc(p.c)}</td><td class="mono">${esc(p.clock||"")}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+function setupRanges(){
+  $("r0").min = 0;
+  $("r0").max = Math.max(0, series.length-2);
+  $("rf").min = 1;
+  $("rf").max = Math.max(1, series.length-1);
+
+  $("r0").value = 0;
+  $("rf").value = series.length-1;
+
+  updateWinChip();
+}
+
+function updateWinChip(){
+  const i0 = Number($("r0").value||0);
+  const iF = Number($("rf").value||1);
+  const a = series[Math.max(0, Math.min(series.length-1, i0))];
+  const b = series[Math.max(0, Math.min(series.length-1, iF))];
+  const t0 = a?.t, tf = b?.t;
+  $("winChip").textContent = (Number.isFinite(t0)&&Number.isFinite(tf))
+    ? `t: ${t0} → ${tf} (Δ=${(tf-t0).toFixed(0)} s)`
+    : "—";
+}
+
+$("r0").addEventListener("input", ()=>{
+  // garantir r0 < rf
+  if(Number($("r0").value) >= Number($("rf").value)) $("r0").value = Math.max(0, Number($("rf").value)-1);
+  updateWinChip();
+  fitFromRanges(false);
+});
+$("rf").addEventListener("input", ()=>{
+  if(Number($("rf").value) <= Number($("r0").value)) $("rf").value = Math.min(series.length-1, Number($("r0").value)+1);
+  updateWinChip();
+  fitFromRanges(false);
+});
+
+function drawChart(fit){
+  const ctx=$("chart").getContext("2d");
+  const ds=[{
+    label:"CO₂ (ppm)",
+    data: series.map(p=>({x:p.t,y:p.c})),
+    pointRadius:3, showLine:false
+  }];
+
+  if(fit && Number.isFinite(fit.slope)){
+    const t0=fit.t_ini, tf=fit.t_fim;
+    ds.push({
+      label:`Reta (R²=${fit.r2.toFixed(4)})`,
+      data:[{x:t0,y:fit.slope*t0+fit.intercept},{x:tf,y:fit.slope*tf+fit.intercept}],
+      pointRadius:0, showLine:true, borderWidth:3
+    });
+  }
+
+  if(chart) chart.destroy();
+  chart=new Chart(ctx,{
+    type:"scatter",
+    data:{datasets:ds},
+    options:{
+      responsive:true, maintainAspectRatio:false, parsing:false,
+      scales:{
+        x:{title:{display:true,text:"Tempo (s)", color:"#f2f7ff"}, ticks:{color:"#cfe0ff"}},
+        y:{title:{display:true,text:"CO₂ (ppm)", color:"#f2f7ff"}, ticks:{color:"#cfe0ff"}}
+      },
+      plugins:{
+        legend:{labels:{color:"#f2f7ff"}}
+      }
+    }
+  });
+}
+
+/* ===== regressão ===== */
+function linearRegression(sub){
+  const n=sub.length;
+  const x=sub.map(p=>p.t), y=sub.map(p=>p.c);
+  const mx=x.reduce((a,b)=>a+b,0)/n, my=y.reduce((a,b)=>a+b,0)/n;
+  let num=0, den=0;
+  for(let i=0;i<n;i++){ num+=(x[i]-mx)*(y[i]-my); den+=(x[i]-mx)*(x[i]-mx); }
+  const slope=den===0?NaN:num/den;
+  const intercept=my-slope*mx;
+  let ssTot=0, ssRes=0;
+  for(let i=0;i<n;i++){
+    const yhat=slope*x[i]+intercept;
+    ssTot+=(y[i]-my)**2;
+    ssRes+=(y[i]-yhat)**2;
+  }
+  const r2=ssTot===0?NaN:1-ssRes/ssTot;
+  return {slope,intercept,r2,n};
+}
+
+function fitFromRanges(silent){
+  if(series.length<5) return;
+
+  const i0 = Number($("r0").value||0);
+  const iF = Number($("rf").value||1);
+
+  const a = series[i0];
+  const b = series[iF];
+  if(!a || !b) return;
+
+  const t0 = a.t, tf = b.t;
+  const sub = series.filter(p=>p.t>=t0 && p.t<=tf);
+  if(sub.length<3){
+    if(!silent) setStatus("Poucos pontos na janela.");
+    return;
+  }
+  const reg = linearRegression(sub);
+  if(!Number.isFinite(reg.r2)) return;
+
+  applyFit({...reg, t_ini:t0, t_fim:tf, metodo:"slider"});
+  if(!silent) setStatus(`Janela (sliders) ✅ R²=${reg.r2.toFixed(4)} | n=${reg.n} | [${t0}–${tf}]`);
+}
+
+$("btnAutoFit").addEventListener("click", ()=>{
+  if(series.length<5) return setStatus("Poucos pontos para ajuste.");
+  // Auto-fit por R² máximo, mas sem estourar muito custo: usar índices e janelas em tempo (segundos)
+  const wmin = 60;   // mínimo em segundos (padrão fixo; se quiser eu coloco input de novo)
+  const step = 5;
+
+  const tMin=series[0].t, tMax=series[series.length-1].t;
+
+  let best=null;
+  for(let t0=tMin;t0<=tMax;t0+=step){
+    for(let tf=t0+wmin;tf<=tMax;tf+=step){
+      const sub=series.filter(p=>p.t>=t0 && p.t<=tf);
+      if(sub.length<3) continue;
+      const reg=linearRegression(sub);
+      if(!Number.isFinite(reg.r2)) continue;
+      if(!best || reg.r2>best.r2) best={...reg,t_ini:t0,t_fim:tf,metodo:"auto_R2max"};
+    }
+  }
+  if(!best) return setStatus("Não achei janela válida (tente um arquivo com mais tempo).");
+  applyFit(best);
+  // sincronizar sliders aproximando para índices mais próximos
+  syncRangesToTime(best.t_ini, best.t_fim);
+  setStatus(`Auto-fit OK ✅ R²=${best.r2.toFixed(4)} janela=[${best.t_ini},${best.t_fim}] n=${best.n}`);
+});
+
+function syncRangesToTime(t0, tf){
+  // achar índices mais próximos
+  let i0=0, iF=series.length-1;
+  let best0=Infinity, bestF=Infinity;
+  for(let i=0;i<series.length;i++){
+    const d0=Math.abs(series[i].t - t0);
+    if(d0<best0){best0=d0;i0=i}
+    const dF=Math.abs(series[i].t - tf);
+    if(dF<bestF){bestF=dF;iF=i}
+  }
+  if(i0>=iF){ i0=Math.max(0,iF-1); }
+  $("r0").value=i0;
+  $("rf").value=iF;
+  updateWinChip();
+}
+
+$("btnManualFit").addEventListener("click", ()=>{
+  const t0=toNum($("t0").value), tf=toNum($("tf").value);
+  if(!Number.isFinite(t0)||!Number.isFinite(tf)||tf<=t0) return setStatus("Intervalo manual inválido.");
+  const sub=series.filter(p=>p.t>=t0&&p.t<=tf);
+  if(sub.length<3) return setStatus("Menos de 3 pontos na janela.");
+  const reg=linearRegression(sub);
+  if(!Number.isFinite(reg.r2)) return setStatus("R² não calculável.");
+  applyFit({...reg,t_ini:t0,t_fim:tf,metodo:"manual"});
+  syncRangesToTime(t0, tf);
+  setStatus(`Manual OK ✅ R²=${reg.r2.toFixed(4)} n=${reg.n}`);
+});
+
+$("btnResetFit").addEventListener("click", resetFit);
+$("btnRecalcFlux").addEventListener("click", recalcFlux);
+
+function resetFit(){
+  currentFit=null;
+  pill("fitInfo","sem ajuste");
+  $("k_r2").textContent="—";
+  $("k_slope").textContent="—";
+  $("k_win").textContent="—";
+  $("k_flux").textContent="—";
+  $("t0").value=""; $("tf").value="";
+  if(series.length) drawChart(null);
+}
+
+function applyFit(fit){
+  currentFit=fit;
+  pill("fitInfo", `${fit.metodo} R²=${fit.r2.toFixed(4)}`);
+  $("k_r2").textContent=fit.r2.toFixed(4);
+  $("k_slope").textContent=fit.slope.toFixed(6);
+  $("k_win").textContent=`${fit.t_ini} – ${fit.t_fim}`;
+  $("t0").value=fit.t_ini; $("tf").value=fit.t_fim;
+  drawChart(fit);
+  recalcFlux();
+}
+
+function recalcFlux(){
+  if(!currentFit || !Number.isFinite(currentFit.slope)) return;
+  const slope=currentFit.slope;
+  const V=toNum($("V").value), A=toNum($("A").value), P=toNum($("P").value), T=toNum($("T").value);
+  if(![V,A,P,T].every(Number.isFinite) || V<=0 || A<=0 || P<=0) return;
+
+  const R=8.314462618;
+  const MCO2=44.0095;
+  const TK=T+273.15;
+
+  const flux = (slope*1e-6) * (P/(R*TK)) * (V/A) * (MCO2*1000) * 3600;
+  $("k_flux").textContent = Number.isFinite(flux)? flux.toFixed(3) : "—";
+}
+
+// inicial
+setTimeLabels();
+</script>
 </body>
 </html>
